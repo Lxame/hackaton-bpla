@@ -2,14 +2,13 @@
 
 from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func # <-- ДОБАВИТЬ ЭТОТ ИМПОРТ
 from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
 
 from . import models
 from .database import engine, get_db
 
-# Эта команда создает таблицы в БД при старте, если их нет
-# В реальном проекте для этого используют миграции (например, Alembic)
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -17,23 +16,41 @@ app = FastAPI(
     description="Сервис для анализа полетов гражданских беспилотников"
 )
 
+# +++ НАЧАЛО НОВОЙ ФУНКЦИИ +++
+def find_region_for_point(db: Session, point_geom):
+    """
+    Находит ID региона, в котором находится заданная точка.
+    """
+    # Выполняем пространственный запрос с помощью функции PostGIS ST_Contains
+    region = db.query(models.Region.id).filter(
+        func.ST_Contains(models.Region.geom, point_geom)
+    ).first()
+    
+    if region:
+        return region.id
+    return None
+# +++ КОНЕЦ НОВОЙ ФУНКЦИИ +++
+
+
 @app.post("/flights/upload", status_code=status.HTTP_201_CREATED)
 def upload_flights(request: models.FlightUploadRequest, db: Session = Depends(get_db)):
     """
-    Принимает пакет данных о полетах, валидирует и сохраняет в БД.
+    Принимает пакет данных о полетах, валидирует, геопривязывает и сохраняет в БД.
     """
     new_flights_count = 0
-    for flight_data in request.flights:
-        # Конвертируем Pydantic модель в SQLAlchemy модель
-        
-        # Создаем геометрию точки взлета
-        lat, lon = flight_data.parsed_takeoff_coords
-        takeoff_point_geom = from_shape(Point(lon, lat), srid=4326)
-        
-        # Создаем геометрию точки посадки
-        lat_l, lon_l = flight_data.parsed_landing_coords
-        landing_point_geom = from_shape(Point(lon_l, lat_l), srid=4326)
+    processed_flights = []
 
+    for flight_data in request.flights:
+        lat, lon = flight_data.parsed_takeoff_coords
+        takeoff_point_geom = f'SRID=4326;POINT({lon} {lat})' # Используем WKT-представление
+        
+        lat_l, lon_l = flight_data.parsed_landing_coords
+        landing_point_geom = f'SRID=4326;POINT({lon_l} {lat_l})'
+
+        # --- ИЗМЕНЕНИЯ ЗДЕСЬ ---
+        # Находим регион для точки взлета
+        region_id = find_region_for_point(db, takeoff_point_geom)
+        
         db_flight = models.Flight(
             drone_type=flight_data.drone_type,
             takeoff_time=flight_data.takeoff_datetime,
@@ -41,22 +58,17 @@ def upload_flights(request: models.FlightUploadRequest, db: Session = Depends(ge
             duration_minutes=flight_data.duration_minutes,
             takeoff_point=takeoff_point_geom,
             landing_point=landing_point_geom,
+            region_id=region_id, # <-- ПРИСВАИВАЕМ НАЙДЕННЫЙ ID
         )
+        processed_flights.append(db_flight)
 
-        # TODO: На следующем шаге здесь будет логика геопривязки к региону
-        # region_id = find_region_for_point(db, takeoff_point_geom)
-        # db_flight.region_id = region_id
-
-        db.add(db_flight)
-        new_flights_count += 1
+    db.add_all(processed_flights)
+    new_flights_count = len(processed_flights)
     
     try:
         db.commit()
     except Exception as e:
         db.rollback()
-        # В ТЗ есть требование об удалении дубликатов.
-        # Если в БД настроено UNIQUE-ограничение, здесь будет ошибка IntegrityError
-        # Мы можем ее обработать более красиво, но пока оставим так.
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to save flights to database: {e}"
