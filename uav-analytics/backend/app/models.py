@@ -84,3 +84,26 @@ class FlightRecordIn(BaseModel):
 
 class FlightUploadRequest(BaseModel):
     flights: List[FlightRecordIn]
+
+# Модель для одного элемента в рейтинге регионов
+class RegionStat(BaseModel):
+    region_id: int
+    region_name: str
+    flight_count: int
+
+    class Config:
+        orm_mode = True # Позволяет Pydantic работать с объектами SQLAlchemy
+
+# Модель для ответа с рейтингом регионов
+class RegionRatingResponse(BaseModel):
+    total_flights: int
+    rating: List[RegionStat]
+
+# Модель для одной точки во временном ряду
+class TimeSeriesPoint(BaseModel):
+    date: str # Будем возвращать дату в формате 'YYYY-MM-DD'
+    flight_count: int
+
+# Модель для ответа с временным рядом
+class FlightDynamicsResponse(BaseModel):
+    data: List[TimeSeriesPoint]

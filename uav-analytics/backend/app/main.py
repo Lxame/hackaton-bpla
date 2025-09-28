@@ -2,9 +2,11 @@
 
 from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func # <-- ДОБАВИТЬ ЭТОТ ИМПОРТ
+from sqlalchemy import func, Date # <-- ДОБАВИТЬ ЭТОТ ИМПОРТ
 from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
+from typing import List, Optional
+from datetime import date, timedelta # Добавим импорт date
 
 from . import models
 from .database import engine, get_db
@@ -75,6 +77,88 @@ def upload_flights(request: models.FlightUploadRequest, db: Session = Depends(ge
         )
 
     return {"message": f"Successfully processed and saved {new_flights_count} flights."}
+
+@app.get("/analytics/rating/regions", response_model=models.RegionRatingResponse)
+def get_region_rating(
+    limit: int = 10,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Возвращает рейтинг регионов по количеству полетов.
+    Можно фильтровать по дате.
+    """
+    # Начинаем строить запрос
+    query = db.query(
+        models.Region.id.label("region_id"),
+        models.Region.name.label("region_name"),
+        func.count(models.Flight.id).label("flight_count")
+    ).join(models.Flight, models.Region.id == models.Flight.region_id)
+
+    # Применяем фильтры по дате, если они заданы
+    if start_date:
+        query = query.filter(models.Flight.takeoff_time >= start_date)
+    if end_date:
+        # Добавляем 1 день к end_date, чтобы включить весь день
+        query = query.filter(models.Flight.takeoff_time < end_date + timedelta(days=1))
+
+    # Группируем, сортируем и ограничиваем результат
+    rating_data = query.group_by(
+        models.Region.id,
+        models.Region.name
+    ).order_by(
+        func.count(models.Flight.id).desc()
+    ).limit(limit).all()
+
+    # Считаем общее количество полетов за период
+    total_flights_query = db.query(func.count(models.Flight.id))
+    if start_date:
+        total_flights_query = total_flights_query.filter(models.Flight.takeoff_time >= start_date)
+    if end_date:
+        total_flights_query = total_flights_query.filter(models.Flight.takeoff_time < end_date + timedelta(days=1))
+    
+    total_flights = total_flights_query.scalar()
+
+    return {"total_flights": total_flights, "rating": rating_data}
+
+
+@app.get("/analytics/dynamics", response_model=models.FlightDynamicsResponse)
+def get_flight_dynamics(
+    start_date: date,
+    end_date: date,
+    region_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Возвращает динамику количества полетов по дням.
+    Можно фильтровать по конкретному региону.
+    """
+    # Кастуем timestamp к дате для группировки
+    flight_date = func.cast(models.Flight.takeoff_time, Date).label("date")
+    
+    query = db.query(
+        flight_date,
+        func.count(models.Flight.id).label("flight_count")
+    ).filter(
+        models.Flight.takeoff_time >= start_date
+    ).filter(
+        models.Flight.takeoff_time < end_date + timedelta(days=1)
+    )
+
+    # Если указан регион, добавляем фильтр
+    if region_id:
+        query = query.filter(models.Flight.region_id == region_id)
+    
+    dynamics_data = query.group_by(flight_date).order_by(flight_date).all()
+    
+    # Конвертируем дату в строку для JSON-ответа
+    result_data = [
+        {"date": str(row.date), "flight_count": row.flight_count} 
+        for row in dynamics_data
+    ]
+
+    return {"data": result_data}
 
 @app.get("/")
 def read_root():
