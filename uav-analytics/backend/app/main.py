@@ -1,0 +1,69 @@
+# backend/app/main.py
+
+from fastapi import FastAPI, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from geoalchemy2.shape import from_shape
+from shapely.geometry import Point
+
+from . import models
+from .database import engine, get_db
+
+# Эта команда создает таблицы в БД при старте, если их нет
+# В реальном проекте для этого используют миграции (например, Alembic)
+models.Base.metadata.create_all(bind=engine)
+
+app = FastAPI(
+    title="UAV Flight Analytics Service",
+    description="Сервис для анализа полетов гражданских беспилотников"
+)
+
+@app.post("/flights/upload", status_code=status.HTTP_201_CREATED)
+def upload_flights(request: models.FlightUploadRequest, db: Session = Depends(get_db)):
+    """
+    Принимает пакет данных о полетах, валидирует и сохраняет в БД.
+    """
+    new_flights_count = 0
+    for flight_data in request.flights:
+        # Конвертируем Pydantic модель в SQLAlchemy модель
+        
+        # Создаем геометрию точки взлета
+        lat, lon = flight_data.parsed_takeoff_coords
+        takeoff_point_geom = from_shape(Point(lon, lat), srid=4326)
+        
+        # Создаем геометрию точки посадки
+        lat_l, lon_l = flight_data.parsed_landing_coords
+        landing_point_geom = from_shape(Point(lon_l, lat_l), srid=4326)
+
+        db_flight = models.Flight(
+            drone_type=flight_data.drone_type,
+            takeoff_time=flight_data.takeoff_datetime,
+            landing_time=flight_data.landing_datetime,
+            duration_minutes=flight_data.duration_minutes,
+            takeoff_point=takeoff_point_geom,
+            landing_point=landing_point_geom,
+        )
+
+        # TODO: На следующем шаге здесь будет логика геопривязки к региону
+        # region_id = find_region_for_point(db, takeoff_point_geom)
+        # db_flight.region_id = region_id
+
+        db.add(db_flight)
+        new_flights_count += 1
+    
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        # В ТЗ есть требование об удалении дубликатов.
+        # Если в БД настроено UNIQUE-ограничение, здесь будет ошибка IntegrityError
+        # Мы можем ее обработать более красиво, но пока оставим так.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save flights to database: {e}"
+        )
+
+    return {"message": f"Successfully processed and saved {new_flights_count} flights."}
+
+@app.get("/")
+def read_root():
+    return {"status": "Service is running"}
