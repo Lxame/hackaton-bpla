@@ -1,0 +1,25 @@
+{
+  "flights": [
+    {
+      "drone_type": "Mavic 3",
+      "takeoff_datetime": "2024-01-15T10:30:00",
+      "landing_datetime": "2024-01-15T11:15:00",
+      "takeoff_coordinates": "55.7558,37.6176",
+      "landing_coordinates": "55.7658,37.6276"
+    },
+    {
+      "drone_type": "DJI Phantom 4",
+      "takeoff_datetime": "2024-01-16T09:15:00",
+      "landing_datetime": "2024-01-16T10:00:00",
+      "takeoff_coordinates": "55.7458,37.6076",
+      "landing_coordinates": "55.7558,37.6176"
+    },
+    {
+      "drone_type": "Inspire 2",
+      "takeoff_datetime": "2024-01-17T14:20:00",
+      "landing_datetime": "2024-01-17T15:30:00",
+      "takeoff_coordinates": "55.7358,37.5976",
+      "landing_coordinates": "55.7458,37.6076"
+    }
+  ]
+}

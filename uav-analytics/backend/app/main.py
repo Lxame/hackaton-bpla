@@ -1,6 +1,7 @@
 # backend/app/main.py
 
 from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import func, Date # <-- ДОБАВИТЬ ЭТОТ ИМПОРТ
 from geoalchemy2.shape import from_shape
@@ -16,6 +17,15 @@ models.Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="UAV Flight Analytics Service",
     description="Сервис для анализа полетов гражданских беспилотников"
+)
+
+# Настройка CORS для работы с frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://frontend:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # +++ НАЧАЛО НОВОЙ ФУНКЦИИ +++
@@ -60,7 +70,7 @@ def upload_flights(request: models.FlightUploadRequest, db: Session = Depends(ge
             duration_minutes=flight_data.duration_minutes,
             takeoff_point=takeoff_point_geom,
             landing_point=landing_point_geom,
-            region_id=region_id, # <-- ПРИСВАИВАЕМ НАЙДЕННЫЙ ID
+            region_id=region_id,
         )
         processed_flights.append(db_flight)
 
@@ -159,6 +169,36 @@ def get_flight_dynamics(
     ]
 
     return {"data": result_data}
+
+@app.get("/flights", response_model=List[dict])
+def get_flights(
+    limit: int = 100,
+    offset: int = 0,
+    region_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Получить список полетов с возможностью фильтрации.
+    """
+    query = db.query(models.Flight)
+    
+    if region_id:
+        query = query.filter(models.Flight.region_id == region_id)
+    
+    flights = query.offset(offset).limit(limit).all()
+    
+    result = []
+    for flight in flights:
+        result.append({
+            "id": flight.id,
+            "drone_type": flight.drone_type,
+            "takeoff_time": flight.takeoff_time,
+            "landing_time": flight.landing_time,
+            "duration_minutes": flight.duration_minutes,
+            "region_id": flight.region_id
+        })
+    
+    return result
 
 @app.get("/")
 def read_root():

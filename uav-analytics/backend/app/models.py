@@ -35,10 +35,12 @@ class Flight(Base):
 
 # --- Pydantic Models (для API) ---
 
+# Упрощенная модель полета (только базовые поля)
 class FlightRecordIn(BaseModel):
+    # Основные поля полета
     drone_type: str
-    takeoff_coords: str
-    landing_coords: str
+    takeoff_coordinates: str
+    landing_coordinates: str
     takeoff_datetime: datetime
     landing_datetime: datetime
     
@@ -48,16 +50,16 @@ class FlightRecordIn(BaseModel):
     duration_minutes: int = None
     
     # Валидатор для координат взлета
-    @validator('takeoff_coords')
-    def validate_takeoff_coords(cls, v):
+    @validator('takeoff_coordinates')
+    def validate_takeoff_coordinates(cls, v):
         coords = parse_coordinates(v)
         if coords is None:
             raise ValueError(f"Invalid takeoff coordinates format: {v}")
         return v # Возвращаем исходную строку, а результат парсинга сохраним в root_validator
     
     # Валидатор для координат посадки
-    @validator('landing_coords')
-    def validate_landing_coords(cls, v):
+    @validator('landing_coordinates')
+    def validate_landing_coordinates(cls, v):
         coords = parse_coordinates(v)
         if coords is None:
             raise ValueError(f"Invalid landing coordinates format: {v}")
@@ -67,8 +69,8 @@ class FlightRecordIn(BaseModel):
     @root_validator(pre=False, skip_on_failure=True)
     def calculate_derived_fields(cls, values):
         # Парсим координаты и сохраняем в специальные поля
-        values['parsed_takeoff_coords'] = parse_coordinates(values.get('takeoff_coords'))
-        values['parsed_landing_coords'] = parse_coordinates(values.get('landing_coords'))
+        values['parsed_takeoff_coords'] = parse_coordinates(values.get('takeoff_coordinates'))
+        values['parsed_landing_coords'] = parse_coordinates(values.get('landing_coordinates'))
         
         # Вычисляем длительность полета в минутах, это надежнее, чем верить полю 'flight_duration'
         takeoff_dt = values.get('takeoff_datetime')

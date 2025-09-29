@@ -30,10 +30,26 @@ def parse_coordinates(coords_str: str) -> Optional[tuple[float, float]]:
     """
     Главная функция-парсер. Определяет формат и возвращает (широта, долгота).
     Поддерживает форматы:
-    1. 523745С1035519В (ГГММСС)
-    2. 6031N10932E (ГГММ)
+    1. 55.7558,37.6176 (десятичные градусы)
+    2. 523745С1035519В (ГГММСС)
+    3. 6031N10932E (ГГММ)
     """
-    coords_str = coords_str.upper().strip()
+    coords_str = coords_str.strip()
+
+    # Попробуем формат десятичных градусов "широта,долгота"
+    if ',' in coords_str:
+        try:
+            parts = coords_str.split(',')
+            if len(parts) == 2:
+                lat = float(parts[0].strip())
+                lon = float(parts[1].strip())
+                # Проверяем, что координаты в разумных пределах
+                if -90 <= lat <= 90 and -180 <= lon <= 180:
+                    return lat, lon
+        except ValueError:
+            pass
+
+    coords_str = coords_str.upper()
 
     # Попробуем формат ГГММСС (DDMMSS) с русскими буквами
     match = re.match(r'^(\d{6})([СЮNS])(\d{6,7})([ВЗEW])$', coords_str)
