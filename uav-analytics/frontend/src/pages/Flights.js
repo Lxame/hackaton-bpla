@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Plane, 
   MapPin, 
@@ -28,18 +28,33 @@ const Flights = () => {
   const fetchFlights = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('/flights', {
-        params: {
-          limit: 1000
-        }
-      });
-      setFlights(response.data);
+      // Всегда идем напрямую на бекенд (proxy нестабилен)
+      // eslint-disable-next-line no-console
+      console.log('[Flights] fetching from http://localhost:8000/api/flights');
+      const response = await axios.get('http://localhost:8000/api/flights', { params: { limit: 1000 } });
+      const payload = Array.isArray(response.data)
+        ? response.data
+        : (Array.isArray(response.data?.flights) ? response.data.flights : []);
+      // eslint-disable-next-line no-console
+      console.log('[Flights] fetched', Array.isArray(payload) ? payload.length : 0, 'items');
+      setFlights(payload);
     } catch (error) {
       console.error('Ошибка загрузки полетов:', error);
     } finally {
       setLoading(false);
     }
   };
+
+  const regionStats = useMemo(() => {
+    const counts = flights.reduce((acc, flight) => {
+      const regionId = flight.region_id ?? 'N/A';
+      acc[regionId] = (acc[regionId] || 0) + 1;
+      return acc;
+    }, {});
+    return Object.entries(counts)
+      .map(([regionId, count]) => ({ regionId, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [flights]);
 
   const filteredFlights = flights.filter(flight => {
     const matchesSearch = searchTerm === '' || 
@@ -192,6 +207,37 @@ const Flights = () => {
             Экспорт CSV
           </button>
         </div>
+      </div>
+
+      {/* Region stats (MVP) */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Статистика по регионам (MVP)</h2>
+        {loading ? (
+          <div className="flex items-center justify-center py-6">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+          </div>
+        ) : regionStats.length === 0 ? (
+          <div className="text-gray-600">Данных о полетах нет</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Регион</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Количество полетов</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {regionStats.map((item) => (
+                  <tr key={item.regionId}>
+                    <td className="px-4 py-2 text-sm text-gray-900">{item.regionId}</td>
+                    <td className="px-4 py-2 text-sm text-gray-900">{item.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Filters */}

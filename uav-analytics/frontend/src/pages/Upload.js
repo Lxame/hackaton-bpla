@@ -80,29 +80,96 @@ const Upload = () => {
 
   const validateJson = (jsonText) => {
     try {
-      const data = JSON.parse(jsonText);
-      
-      if (!data.flights || !Array.isArray(data.flights)) {
-        throw new Error('JSON должен содержать массив "flights"');
-      }
-
-      const requiredFields = ['drone_type', 'takeoff_datetime', 'landing_datetime', 'takeoff_coordinates', 'landing_coordinates'];
-      
-      for (let i = 0; i < data.flights.length; i++) {
-        const flight = data.flights[i];
-        for (const field of requiredFields) {
-          if (!flight[field]) {
-            throw new Error(`Полет ${i + 1}: отсутствует обязательное поле "${field}"`);
+      // Очистка: убираем BOM, лишние пробелы
+      let text = (jsonText || '').replace(/^\uFEFF/, '').trim();
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch (e) {
+        // Попытка исправить типичные ошибки JSON: завершающие запятые
+        const fixed = text
+          .replace(/,\s*\]/g, "]")
+          .replace(/,\s*\}/g, "}");
+        try {
+          parsed = JSON.parse(fixed);
+        } catch (e2) {
+          // Последняя попытка: вырезаем содержимое между первым '[' и последним ']'
+          const startArr = fixed.indexOf('[');
+          const endArr = fixed.lastIndexOf(']');
+          if (startArr !== -1 && endArr !== -1 && endArr > startArr) {
+            const slice = fixed.slice(startArr, endArr + 1);
+            parsed = JSON.parse(slice);
+          } else {
+            throw e2;
           }
         }
-
-        // Валидация координат
-        if (!flight.takeoff_coordinates.includes(',') || !flight.landing_coordinates.includes(',')) {
-          throw new Error(`Полет ${i + 1}: координаты должны быть в формате "широта,долгота"`);
-        }
       }
 
-      return data;
+      // Поддерживаем 3 формата входных данных:
+      // 1) { flights: [...] }
+      // 2) [ ... ] (массив полетов)
+      // 3) { ... } (один полет)
+      let data;
+      if (Array.isArray(parsed)) {
+        data = { flights: parsed };
+      } else if (parsed && typeof parsed === 'object' && Array.isArray(parsed.flights)) {
+        data = parsed;
+      } else if (parsed && typeof parsed === 'object') {
+        data = { flights: [parsed] };
+      } else {
+        throw new Error('Ожидался объект, массив или объект с ключом "flights"');
+      }
+
+      const toIso = (value) => {
+        if (typeof value !== 'string') return value;
+        // Преобразуем "YYYY-MM-DD HH:MM:SS" -> "YYYY-MM-DDTHH:MM:SS"
+        if (value.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)) {
+          return value.replace(' ', 'T');
+        }
+        return value;
+      };
+
+      const errors = [];
+      let skipped = 0;
+      const normalizedFlights = data.flights.map((f, idx) => {
+        const takeoff_coordinates = f.takeoff_coordinates ?? f.takeoff_coords ?? f.takeoff ?? f.takeoff_position;
+        const landing_coordinates = f.landing_coordinates ?? f.landing_coords ?? f.landing ?? f.landing_position;
+        const takeoff_datetime = f.takeoff_datetime ?? f.start_time ?? f.start ?? f.takeoff_time;
+        const landing_datetime = f.landing_datetime ?? f.end_time ?? f.end ?? f.landing_time;
+        const drone_type = f.drone_type ?? f.type ?? f.drone ?? 'Unknown';
+
+        if (!takeoff_coordinates) {
+          skipped++; errors.push(`Полет ${idx + 1}: нет координат взлета`); return null;
+        }
+        if (!landing_coordinates) {
+          skipped++; errors.push(`Полет ${idx + 1}: нет координат посадки`); return null;
+        }
+        if (!takeoff_datetime) {
+          skipped++; errors.push(`Полет ${idx + 1}: takeoff_datetime = null`); return null;
+        }
+        if (!landing_datetime) {
+          skipped++; errors.push(`Полет ${idx + 1}: landing_datetime = null`); return null;
+        }
+
+        // Координаты могут быть в формате "DDMMNDDDMME" — не требуем запятую, бэкенд сам распарсит
+        if (typeof takeoff_coordinates !== 'string' || typeof landing_coordinates !== 'string') {
+          throw new Error(`Полет ${idx + 1}: координаты должны быть строкой`);
+        }
+
+        return {
+          drone_type,
+          takeoff_coordinates: String(takeoff_coordinates),
+          landing_coordinates: String(landing_coordinates),
+          takeoff_datetime: toIso(String(takeoff_datetime)),
+          landing_datetime: toIso(String(landing_datetime)),
+        };
+      }).filter(Boolean);
+
+      if (normalizedFlights.length === 0) {
+        throw new Error('Все записи отклонены: отсутствуют обязательные поля (координаты/время)');
+      }
+
+      return { flights: normalizedFlights, _skipped: skipped, _errors: errors };
     } catch (error) {
       throw new Error(`Ошибка валидации JSON: ${error.message}`);
     }
@@ -114,20 +181,40 @@ const Upload = () => {
       setUploadResult(null);
 
       const jsonData = validateJson(jsonInput);
+      // Debug: покажем, что реально отправляем
+      // eslint-disable-next-line no-console
+      console.log('[Upload] normalized payload', jsonData);
       
-      const response = await axios.post('/flights/upload', jsonData);
+      let response;
+      try {
+        response = await axios.post('/api/flights/upload', { flights: jsonData.flights });
+      } catch (e) {
+        // Proxy может быть недоступен; пробуем напрямую к бекенду
+        response = await axios.post('http://localhost:8000/api/flights/upload', { flights: jsonData.flights });
+      }
       
+      const skippedInfo = jsonData._skipped ? ` (пропущено: ${jsonData._skipped})` : '';
       setUploadResult({
         success: true,
-        message: response.data.message,
-        flightsCount: jsonData.flights.length
+        message: `${response.data.message}${skippedInfo}`,
+        flightsCount: jsonData.flights.length,
+        skipped: jsonData._skipped || 0
       });
 
       // Очищаем форму после успешной загрузки
       setUploadedFile(null);
       setJsonInput('');
+      // Опционально: можно уведомить страницу полетов о необходимости перезагрузки
+      // Перенаправим пользователя на страницу "Полеты"
+      try {
+        window.history.pushState({}, '', '/flights');
+        // В приложениях на react-router лучше использовать useNavigate, но держим минимализм
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      } catch (_) {}
       
     } catch (error) {
+      // eslint-disable-next-line no-console
+      console.log('[Upload] error', error?.response?.data || error?.message, error);
       setUploadResult({
         success: false,
         message: error.response?.data?.detail || error.message || 'Ошибка при загрузке данных'

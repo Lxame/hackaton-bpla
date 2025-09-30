@@ -88,6 +88,11 @@ def upload_flights(request: models.FlightUploadRequest, db: Session = Depends(ge
 
     return {"message": f"Successfully processed and saved {new_flights_count} flights."}
 
+# Aliases under /api for frontend proxy consistency
+@app.post("/api/flights/upload", status_code=status.HTTP_201_CREATED)
+def upload_flights_api_alias(request: models.FlightUploadRequest, db: Session = Depends(get_db)):
+    return upload_flights(request, db)
+
 @app.get("/analytics/rating/regions", response_model=models.RegionRatingResponse)
 def get_region_rating(
     limit: int = 10,
@@ -199,6 +204,15 @@ def get_flights(
         })
     
     return result
+
+@app.get("/api/flights", response_model=List[dict])
+def get_flights_api_alias(
+    limit: int = 100,
+    offset: int = 0,
+    region_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    return get_flights(limit=limit, offset=offset, region_id=region_id, db=db)
 
 @app.get("/")
 def read_root():
