@@ -13,6 +13,11 @@ COPY ./requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --upgrade -r /app/requirements.txt
 
 COPY ./app /app/app
+COPY ./init_regions.py /app/init_regions.py
+COPY ./start.sh /app/start.sh
 
-# Uvicorn будет запускать наше приложение
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Делаем скрипт исполняемым
+RUN chmod +x /app/start.sh
+
+# Запускаем через скрипт
+CMD ["/bin/bash", "/app/start.sh"]

@@ -7,8 +7,8 @@ import {
   BarChart3,
   TrendingUp
 } from 'lucide-react';
-import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { analyticsAPI, apiUtils } from '../services/api';
 
 const Analytics = () => {
   const [dateRange, setDateRange] = useState({
@@ -21,14 +21,10 @@ const Analytics = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Устанавливаем дефолтные даты (последние 30 дней)
-    const today = new Date();
-    const monthAgo = new Date(today);
-    monthAgo.setDate(today.getDate() - 30);
-    
+    // Устанавливаем дефолтные даты (весь 2024 год)
     setDateRange({
-      startDate: monthAgo.toISOString().split('T')[0],
-      endDate: today.toISOString().split('T')[0]
+      startDate: '2024-01-01',
+      endDate: '2025-01-01'
     });
   }, []);
 
@@ -43,27 +39,32 @@ const Analytics = () => {
       setLoading(true);
       
       // Получаем динамику полетов
-      const dynamicsResponse = await axios.get('/analytics/dynamics', {
-        params: {
-          start_date: dateRange.startDate,
-          end_date: dateRange.endDate,
-          region_id: selectedRegion || undefined
-        }
-      });
+      const dynamicsParams = {
+        start_date: dateRange.startDate,
+        end_date: dateRange.endDate
+      };
+      if (selectedRegion) {
+        dynamicsParams.region_id = selectedRegion;
+      }
+      
+      const dynamicsResponse = await analyticsAPI.getFlightDynamics(dynamicsParams);
       setDynamicsData(dynamicsResponse.data.data || []);
 
       // Получаем рейтинг регионов
-      const ratingResponse = await axios.get('/analytics/rating/regions', {
-        params: {
-          limit: 10,
-          start_date: dateRange.startDate,
-          end_date: dateRange.endDate
-        }
-      });
+      const ratingParams = {
+        limit: 10,
+        start_date: dateRange.startDate,
+        end_date: dateRange.endDate
+      };
+      
+      const ratingResponse = await analyticsAPI.getRegionRating(ratingParams);
       setRegionRating(ratingResponse.data.rating || []);
       
     } catch (error) {
-      console.error('Ошибка загрузки аналитики:', error);
+      console.error('Ошибка загрузки аналитики:', apiUtils.handleError(error));
+      // Устанавливаем пустые данные в случае ошибки
+      setDynamicsData([]);
+      setRegionRating([]);
     } finally {
       setLoading(false);
     }
@@ -165,7 +166,7 @@ const Analytics = () => {
               <option value="">Все регионы</option>
               {regionRating.map(region => (
                 <option key={region.region_id} value={region.region_id}>
-                  Регион {region.region_id}
+                  {region.region_name || `Регион ${region.region_id}`}
                 </option>
               ))}
             </select>

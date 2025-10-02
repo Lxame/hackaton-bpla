@@ -8,7 +8,7 @@ import {
   Eye,
   Printer
 } from 'lucide-react';
-import axios from 'axios';
+import { reportsAPI, analyticsAPI, apiUtils } from '../services/api';
 import jsPDF from 'jspdf';
 import * as XLSX from 'xlsx';
 
@@ -30,16 +30,12 @@ const Reports = () => {
   const [previewMode, setPreviewMode] = useState(false);
 
   useEffect(() => {
-    // Устанавливаем дефолтные даты
-    const today = new Date();
-    const monthAgo = new Date(today);
-    monthAgo.setDate(today.getDate() - 30);
-    
+    // Устанавливаем дефолтные даты (весь 2024 год)
     setReportConfig({
       ...reportConfig,
       dateRange: {
-        startDate: monthAgo.toISOString().split('T')[0],
-        endDate: today.toISOString().split('T')[0]
+        startDate: '2024-01-01',
+        endDate: '2025-01-01'
       }
     });
   }, []);
@@ -48,26 +44,40 @@ const Reports = () => {
     try {
       setLoading(true);
       
+      const params = {
+        start_date: reportConfig.dateRange.startDate,
+        end_date: reportConfig.dateRange.endDate
+      };
+      
+      if (reportConfig.region) {
+        params.region_id = reportConfig.region;
+      }
+      
+      // Сначала пробуем новый API для подробного отчета
+      let fullReport = null;
+      try {
+        const reportResponse = await reportsAPI.generateReport(params);
+        fullReport = reportResponse.data;
+      } catch (reportError) {
+        console.warn('Подробный отчет недоступен, используем базовые данные:', reportError);
+      }
+      
+      // Получаем базовые данные для аналитики
       const [dynamicsResponse, ratingResponse] = await Promise.all([
-        axios.get('/analytics/dynamics', {
-          params: {
-            start_date: reportConfig.dateRange.startDate,
-            end_date: reportConfig.dateRange.endDate,
-            region_id: reportConfig.region || undefined
-          }
-        }),
-        axios.get('/analytics/rating/regions', {
-          params: {
-            limit: 20,
-            start_date: reportConfig.dateRange.startDate,
-            end_date: reportConfig.dateRange.endDate
-          }
+        analyticsAPI.getFlightDynamics(params),
+        analyticsAPI.getRegionRating({ 
+          limit: 20, 
+          start_date: reportConfig.dateRange.startDate,
+          end_date: reportConfig.dateRange.endDate
         })
       ]);
 
       const report = {
         config: reportConfig,
         data: {
+          // Подробные данные (если доступны)
+          fullReport: fullReport,
+          // Базовые данные для совместимости
           dynamics: dynamicsResponse.data.data || [],
           regionRating: ratingResponse.data.rating || [],
           totalFlights: ratingResponse.data.total_flights || 0,
@@ -79,8 +89,24 @@ const Reports = () => {
       setPreviewMode(true);
       
     } catch (error) {
-      console.error('Ошибка генерации отчета:', error);
-      alert('Ошибка при генерации отчета');
+      console.error('Ошибка генерации отчета:', apiUtils.handleError(error));
+      
+      // Создаем базовый отчет даже при ошибке
+      const basicReport = {
+        config: reportConfig,
+        data: {
+          fullReport: null,
+          dynamics: [],
+          regionRating: [],
+          totalFlights: 0,
+          generatedAt: new Date().toISOString()
+        }
+      };
+      
+      setReportData(basicReport);
+      setPreviewMode(true);
+      
+      alert('Частичная ошибка при генерации отчета. Показан базовый отчет. Ошибка: ' + apiUtils.handleError(error));
     } finally {
       setLoading(false);
     }
@@ -283,7 +309,7 @@ const Reports = () => {
               <div className="space-y-2">
                 <button
                   onClick={generateReport}
-                  disabled={loading}
+                  disabled={loading || !reportConfig.dateRange.startDate || !reportConfig.dateRange.endDate}
                   className="w-full flex items-center justify-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors"
                 >
                   {loading ? (
@@ -291,7 +317,7 @@ const Reports = () => {
                   ) : (
                     <FileText className="h-4 w-4 mr-2" />
                   )}
-                  Сгенерировать отчет
+                  {loading ? 'Генерация...' : 'Сгенерировать отчет'}
                 </button>
 
                 {reportData && (

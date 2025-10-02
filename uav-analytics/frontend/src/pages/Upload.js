@@ -8,7 +8,7 @@ import {
   Info,
   Plane
 } from 'lucide-react';
-import axios from 'axios';
+import { flightsAPI, apiUtils } from '../services/api';
 
 const Upload = () => {
   const [dragActive, setDragActive] = useState(false);
@@ -185,13 +185,7 @@ const Upload = () => {
       // eslint-disable-next-line no-console
       console.log('[Upload] normalized payload', jsonData);
       
-      let response;
-      try {
-        response = await axios.post('/api/flights/upload', { flights: jsonData.flights });
-      } catch (e) {
-        // Proxy может быть недоступен; пробуем напрямую к бекенду
-        response = await axios.post('http://localhost:8000/api/flights/upload', { flights: jsonData.flights });
-      }
+      const response = await flightsAPI.upload({ flights: jsonData.flights });
       
       const skippedInfo = jsonData._skipped ? ` (пропущено: ${jsonData._skipped})` : '';
       setUploadResult({
@@ -217,7 +211,7 @@ const Upload = () => {
       console.log('[Upload] error', error?.response?.data || error?.message, error);
       setUploadResult({
         success: false,
-        message: error.response?.data?.detail || error.message || 'Ошибка при загрузке данных'
+        message: apiUtils.handleError(error)
       });
     } finally {
       setLoading(false);

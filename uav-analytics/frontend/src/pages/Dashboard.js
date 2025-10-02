@@ -7,7 +7,8 @@ import {
   Calendar,
   BarChart3
 } from 'lucide-react';
-import axios from 'axios';
+import { analyticsAPI, flightsAPI, apiUtils } from '../services/api';
+import RegionsTop from '../components/RegionsTop';
 
 const Dashboard = () => {
   const [stats, setStats] = useState({
@@ -16,7 +17,6 @@ const Dashboard = () => {
     avgDuration: 0,
     todayFlights: 0
   });
-  const [regionRating, setRegionRating] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -27,20 +27,42 @@ const Dashboard = () => {
     try {
       setLoading(true);
       
-      // Получаем рейтинг регионов
-      const ratingResponse = await axios.get('/analytics/rating/regions?limit=5');
-      setRegionRating(ratingResponse.data.rating || []);
+      // Получаем рейтинг регионов и список полетов параллельно
+      const [ratingResponse, flightsResponse] = await Promise.all([
+        analyticsAPI.getRegionRating({ limit: 10 }),
+        flightsAPI.getFlights({ limit: 100 })
+      ]);
       
       // Получаем общую статистику
       const totalFlights = ratingResponse.data.total_flights || 0;
+      const flights = flightsResponse.data || [];
+      
+      // Вычисляем среднюю длительность
+      const avgDuration = flights.length > 0 
+        ? Math.round(flights.reduce((sum, flight) => sum + (flight.duration_minutes || 0), 0) / flights.length)
+        : 0;
+      
+      // Подсчитываем полеты за сегодня
+      const today = new Date().toISOString().split('T')[0];
+      const todayFlights = flights.filter(flight => 
+        flight.takeoff_time && flight.takeoff_time.startsWith(today)
+      ).length;
+      
       setStats({
         totalFlights,
         totalRegions: ratingResponse.data.rating?.length || 0,
-        avgDuration: 45, // Пока заглушка, можно добавить отдельный API
-        todayFlights: Math.floor(totalFlights * 0.1) // Примерная оценка
+        avgDuration,
+        todayFlights
       });
     } catch (error) {
-      console.error('Ошибка загрузки данных:', error);
+      console.error('Ошибка загрузки данных:', apiUtils.handleError(error));
+      // Устанавливаем пустые данные в случае ошибки
+      setStats({
+        totalFlights: 0,
+        totalRegions: 0,
+        avgDuration: 0,
+        todayFlights: 0
+      });
     } finally {
       setLoading(false);
     }
@@ -66,12 +88,28 @@ const Dashboard = () => {
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-white rounded-lg shadow p-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">
-          Дашборд UAV Analytics
-        </h1>
-        <p className="text-gray-600">
-          Обзор статистики полетов беспилотных летательных аппаратов
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">
+              Дашборд UAV Analytics
+            </h1>
+            <p className="text-gray-600">
+              Обзор статистики полетов беспилотных летательных аппаратов
+            </p>
+          </div>
+          <button
+            onClick={fetchDashboardData}
+            disabled={loading}
+            className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors"
+          >
+            {loading ? (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+            ) : (
+              <TrendingUp className="h-4 w-4 mr-2" />
+            )}
+            {loading ? 'Обновление...' : 'Обновить данные'}
+          </button>
+        </div>
       </div>
 
       {/* Stats Grid */}
@@ -105,56 +143,7 @@ const Dashboard = () => {
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Top Regions */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">
-              Топ регионов по полетам
-            </h2>
-            <BarChart3 className="h-5 w-5 text-gray-400" />
-          </div>
-          
-          {loading ? (
-            <div className="animate-pulse space-y-3">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="flex items-center space-x-3">
-                  <div className="h-4 bg-gray-200 rounded w-4"></div>
-                  <div className="h-4 bg-gray-200 rounded flex-1"></div>
-                  <div className="h-4 bg-gray-200 rounded w-16"></div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {regionRating.map((region, index) => (
-                <div key={region.region_id} className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="flex-shrink-0 w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center">
-                      <span className="text-xs font-medium text-primary-700">
-                        {index + 1}
-                      </span>
-                    </div>
-                    <span className="text-sm font-medium text-gray-900">
-                      Регион {region.region_id}
-                    </span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="text-sm text-gray-600">
-                      {region.flight_count} полетов
-                    </div>
-                    <div className="w-16 bg-gray-200 rounded-full h-2">
-                      <div 
-                        className="bg-primary-600 h-2 rounded-full"
-                        style={{
-                          width: `${(region.flight_count / Math.max(...regionRating.map(r => r.flight_count))) * 100}%`
-                        }}
-                      ></div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <RegionsTop limit={5} />
 
         {/* Quick Actions */}
         <div className="bg-white rounded-lg shadow p-6">
@@ -172,7 +161,10 @@ const Dashboard = () => {
               </div>
             </button>
             
-            <button className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+            <button 
+              onClick={() => window.location.href = '/reports'}
+              className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+            >
               <div className="flex items-center space-x-3">
                 <BarChart3 className="h-5 w-5 text-green-600" />
                 <div>

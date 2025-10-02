@@ -9,7 +9,7 @@ import {
   Eye,
   Download
 } from 'lucide-react';
-import axios from 'axios';
+import { flightsAPI, apiUtils } from '../services/api';
 
 const Flights = () => {
   const [flights, setFlights] = useState([]);
@@ -28,18 +28,14 @@ const Flights = () => {
   const fetchFlights = async () => {
     try {
       setLoading(true);
-      // Всегда идем напрямую на бекенд (proxy нестабилен)
-      // eslint-disable-next-line no-console
-      console.log('[Flights] fetching from http://localhost:8000/api/flights');
-      const response = await axios.get('http://localhost:8000/api/flights', { params: { limit: 1000 } });
+      const response = await flightsAPI.getFlights({ limit: 1000 });
       const payload = Array.isArray(response.data)
         ? response.data
         : (Array.isArray(response.data?.flights) ? response.data.flights : []);
-      // eslint-disable-next-line no-console
-      console.log('[Flights] fetched', Array.isArray(payload) ? payload.length : 0, 'items');
       setFlights(payload);
     } catch (error) {
-      console.error('Ошибка загрузки полетов:', error);
+      console.error('Ошибка загрузки полетов:', apiUtils.handleError(error));
+      setFlights([]);
     } finally {
       setLoading(false);
     }
@@ -199,13 +195,27 @@ const Flights = () => {
               Просмотр всех загруженных полетов беспилотных летательных аппаратов
             </p>
           </div>
-          <button
-            onClick={exportFlights}
-            className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Экспорт CSV
-          </button>
+          <div className="flex space-x-3">
+            <button
+              onClick={fetchFlights}
+              disabled={loading}
+              className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors"
+            >
+              {loading ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+              ) : (
+                <Eye className="h-4 w-4 mr-2" />
+              )}
+              {loading ? 'Обновление...' : 'Обновить'}
+            </button>
+            <button
+              onClick={exportFlights}
+              className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Экспорт CSV
+            </button>
+          </div>
         </div>
       </div>
 

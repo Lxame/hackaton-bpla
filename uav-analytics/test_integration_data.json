@@ -1,0 +1,39 @@
+{
+  "flights": [
+    {
+      "drone_type": "DJI Mavic 3",
+      "takeoff_datetime": "2024-10-01T09:00:00",
+      "landing_datetime": "2024-10-01T09:45:00",
+      "takeoff_coordinates": "55.7558,37.6176",
+      "landing_coordinates": "55.7658,37.6276"
+    },
+    {
+      "drone_type": "DJI Phantom 4 Pro",
+      "takeoff_datetime": "2024-10-01T10:30:00",
+      "landing_datetime": "2024-10-01T11:15:00",
+      "takeoff_coordinates": "55.7458,37.6076",
+      "landing_coordinates": "55.7558,37.6176"
+    },
+    {
+      "drone_type": "Autel EVO II",
+      "takeoff_datetime": "2024-10-01T14:00:00",
+      "landing_datetime": "2024-10-01T14:30:00",
+      "takeoff_coordinates": "55.7358,37.5976",
+      "landing_coordinates": "55.7458,37.6076"
+    },
+    {
+      "drone_type": "DJI Mini 3 Pro",
+      "takeoff_datetime": "2024-10-02T08:15:00",
+      "landing_datetime": "2024-10-02T09:00:00",
+      "takeoff_coordinates": "55.7658,37.6376",
+      "landing_coordinates": "55.7758,37.6476"
+    },
+    {
+      "drone_type": "Parrot Anafi",
+      "takeoff_datetime": "2024-10-02T11:45:00",
+      "landing_datetime": "2024-10-02T12:30:00",
+      "takeoff_coordinates": "55.7258,37.5876",
+      "landing_coordinates": "55.7358,37.5976"
+    }
+  ]
+}
