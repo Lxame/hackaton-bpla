@@ -3,11 +3,11 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import func, Date # <-- ДОБАВИТЬ ЭТОТ ИМПОРТ
+from sqlalchemy import func, Date
 from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
 from typing import List, Optional
-from datetime import date, timedelta # Добавим импорт date
+from datetime import date, timedelta
 
 from . import models
 from .database import engine, get_db
@@ -28,7 +28,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# +++ НАЧАЛО НОВОЙ ФУНКЦИИ +++
 def find_region_for_point(db: Session, point_wkt):
     """
     Находит ID региона, в котором находится заданная точка.
@@ -57,8 +56,6 @@ def find_region_for_point(db: Session, point_wkt):
         print(f"Ошибка при поиске региона для точки {point_wkt}: {e}")
     
     return None
-# +++ КОНЕЦ НОВОЙ ФУНКЦИИ +++
-
 
 @app.post("/flights/upload", status_code=status.HTTP_201_CREATED)
 def upload_flights(request: models.FlightUploadRequest, db: Session = Depends(get_db)):
@@ -75,7 +72,6 @@ def upload_flights(request: models.FlightUploadRequest, db: Session = Depends(ge
         lat_l, lon_l = flight_data.parsed_landing_coords
         landing_point_geom = f'SRID=4326;POINT({lon_l} {lat_l})'
 
-        # --- ИЗМЕНЕНИЯ ЗДЕСЬ ---
         # Находим регион для точки взлета
         region_id = find_region_for_point(db, takeoff_point_geom)
         
